@@ -35,7 +35,7 @@ current_pir = 0
 previous_pir =0
 
 #Toggles emergency status
-alert = True
+alert = False
 
 #Board setup
 GPIO.setmode(GPIO.BOARD)
@@ -92,64 +92,56 @@ def check_light():
       GPIO.output(street_light, False)
       time.sleep(0.1)
 
-def check_button():
-  global GPIO
-  #If the emergency button i spressed
-  current = GPIO.input(button)
-  while True:
-    if (current == GPIO.LOW):
-      print "EMERGENCY BUTTON PRESSED!"
-      #Reset the button
-      GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
-      #r = requests.get("http://192.168.0.3:9000/test")
-      #print(r.text)
-      #Turn on the street light
-      GPIO.output(street_light, True)
-      #   GPIO.output(emergency_light, True)
-      #   time.sleep(15)
+def signal_alert():
+  while alert:
+    print "Alert: ", alert
+    GPIO.output(emergency_light, True)
+    time.sleep(0.4)
+    GPIO.output(emergency_light, False)
+    time.sleep(0.4)
 
-      while alert:
-        GPIO.output(emergency_light, True)
-        time.sleep(0.4)
-        GPIO.output(emergency_light, False)
-        time.sleep(0.4)
-        #If the emergency button is pressed the second time
-        #turn the lights off
-        if GPIO.input(button) == GPIO.LOW:
-          GPIO.output(emergency_light, False)
-          GPIO.output(street_light, False)
-          break
 
-      #Once the emergency loop is over switch off the lights      
-      GPIO.output(emergency_light, False)
-      GPIO.output(street_light, False)
+def button_pressed(channel):     
+  global alert
+  print "EMERGENCY BUTTON PRESSED!"
+  #Reset the button
+  #GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+  #r = requests.get("http://192.168.0.3:9000/test")
+  #print(r.text)
+  #Turn on the street light
+  if alert == False:
+    alert = True
+    GPIO.output(street_light, True)
+    t_alert = threading.Thread(target = signal_alert)
+    t_alert.start()
+  else:     
+    GPIO.output(emergency_light, False)
+    GPIO.output(street_light, False)
 
 #Manage GPS
 def check_location():
   while True:
-    global lat,lng
-    #Get GPS location
+    global lat,lng    
     gpsd.next()
     lat = gpsd.fix.latitude
     lng = gpsd.fix.longitude
     print "Latitude: ", lat, ", Longitude: ", lng
-    time.sleep(0.1)
+    time.sleep(1)
 
 
 try:
-  #Main program loop
+  GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=300)
+  
   t_location = threading.Thread(target = check_location)
   t_light    = threading.Thread(target = check_light)
-  t_button   = threading.Thread(target = check_button)
+  
 
   t_location.start()
   t_light.start()
-  t_button.start()
-  #check_location();
-  #check_light();
-  #check_button();
+  
+  
   while True:
-    time.sleep(0.1)
+    time.sleep(1)
     pass
 
 except KeyboardInterrupt:
