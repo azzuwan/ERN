@@ -37,6 +37,9 @@ previous_pir =0
 #Toggles emergency status
 alert = False
 
+#Flag to allow threads to exit
+stop_threads = False
+
 #Board setup
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(street_light, GPIO.OUT)
@@ -65,7 +68,7 @@ def RCTime(pin):
 #Manage street light
 def check_light():
   global GPIO, previous_pir, pir_value, ldr_value 
-  while True:    
+  while not stop_threads:    
     #Get motion detector value
     pir_value = GPIO.input(pir)
     
@@ -93,58 +96,65 @@ def check_light():
       time.sleep(0.1)
 
 def signal_alert():
-  while alert:
-    print "Alert: ", alert
+  global alert
+  while alert:    
     GPIO.output(emergency_light, True)
     time.sleep(0.4)
     GPIO.output(emergency_light, False)
     time.sleep(0.4)
+ 
 
 
 def button_pressed(channel):     
   global alert
   print "EMERGENCY BUTTON PRESSED!"
+  print "CURRENT ALERT STATUS: ", alert
   #Reset the button
   #GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
   #r = requests.get("http://192.168.0.3:9000/test")
   #print(r.text)
   #Turn on the street light
-  if alert == False:
-    alert = True
+  if alert == False:    
+    alert = True    
     GPIO.output(street_light, True)
     t_alert = threading.Thread(target = signal_alert)
-    t_alert.start()
-  else:     
+    t_alert.start()    
+  else:    
+    alert = False    
     GPIO.output(emergency_light, False)
     GPIO.output(street_light, False)
 
 #Manage GPS
 def check_location():
-  while True:
+  while not stop_threads:
     global lat,lng    
     gpsd.next()
     lat = gpsd.fix.latitude
     lng = gpsd.fix.longitude
     print "Latitude: ", lat, ", Longitude: ", lng
-    time.sleep(1)
+    time.sleep(2)
 
 
 try:
   GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=300)
-  
+
   t_location = threading.Thread(target = check_location)
-  t_light    = threading.Thread(target = check_light)
-  
+  t_light    = threading.Thread(target = check_light)  
 
   t_location.start()
-  t_light.start()
-  
+  t_light.start()  
   
   while True:
-    time.sleep(1)
+    time.sleep(10)
     pass
 
 except KeyboardInterrupt:
+  print""
+  print "Stopping ERN..."
+  stop_threads = True
+  t_location.join()
+  t_light.join()
+  print "Goodbye!"  
   pass
 finally:
   GPIO.cleanup()
