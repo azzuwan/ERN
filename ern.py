@@ -154,7 +154,7 @@ except KeyboardInterrupt:
   stop_threads = True
   t_location.join()
   t_light.join()
-  print "Goodbye!"  
   pass
 finally:
+  print "Goodbye!" 
   GPIO.cleanup()
