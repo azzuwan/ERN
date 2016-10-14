@@ -54,6 +54,8 @@ alert = False
 #Flag to allow threads to exit
 stop_threads = False
 
+t_distress = None
+
 #Board setup
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(street_light, GPIO.OUT)
@@ -88,19 +90,19 @@ def check_light():
     
     #Get light sensor value
     ldr_value = RCTime(ldr)
-    print ldr_value
+    #print ldr_value
 
     #If motion is detected and it's low light turn on the street light
     #for 10 seconds
     if pir_value == 1 and previous_pir == 0 and ldr_value > 25000:
-      print "Motion detected and it's dark"
+      #print "Motion detected and it's dark"
       previous_pir = 1
       GPIO.output(street_light, True)
       time.sleep(10)      
     #If motion is detected but it is still bright, make sure the lights 
     #are off
     elif pir_value == 1 and previous_pir == 0 and ldr_value < 25000:
-      print "Motion detected but the sun is still out there"
+      #print "Motion detected but the sun is still out there"
       GPIO.output(street_light, False)
       time.sleep(0.1)    
     else:
@@ -154,18 +156,19 @@ def send_distress_signal(alert_type):
   rdb.table("alerts").insert({"node_id" : str(node_id), "lat": str(lat), "lng": str(lng), "timestamp" : timestamp, "alert_type": alert_type}).run()
 
 def button_pressed(channel):     
-  global alert
+  global alert, t_distress
   print "EMERGENCY BUTTON PRESSED!"
   print "CURRENT ALERT STATUS: ", alert
-  t_distress = threading.Thread(target = send_distress_signal, args=["button"])
-  t_distress.start()
-  t_distress.join()
+  
   
   if alert == False:    
     alert = True    
     GPIO.output(street_light, True)
     t_alert = threading.Thread(target = signal_alert)
     t_alert.start()    
+    t_distress = threading.Thread(target = send_distress_signal, args=["button"])
+    t_distress.start()
+    t_distress.join()   
   else:    
     alert = False    
     GPIO.output(emergency_light, False)
@@ -204,6 +207,8 @@ except KeyboardInterrupt:
   t_light.join()
   t_status.join()
   send_offline_status()
+  if not t_distress:
+    t_distress.join()
   pass
 finally:
   print "Goodbye!" 
