@@ -63,9 +63,6 @@ GPIO.output(emergency_light, False)
 GPIO.setup(pir, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
 GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
 
-#Connect to RethinkDB database
-rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
-
 #Manage light sensor
 def RCTime(pin):
   global GPIO
@@ -123,36 +120,46 @@ def signal_alert():
 def update_status():
   print "STATUS UPDATE:"
   while not stop_threads:
-    global rdb, lat, lng    
+    global lat, lng
+    rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
     cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
     nodes = list(cursor)
+    timestamp = time.time()
     if nodes:
       node = nodes[0]
-      print "Updating node: ", node_id, ", @ ", str(lat), ", " ,str(lng), " status = online" 
-      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "online"}).run()
+      print "Updating node: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = online" 
+      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online"}).run()
     else:
       print "Registering new node: ", node_id, ", @ ", str(lat), ", " ,str(lng)
-      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" }).run()      
+      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online" }).run()      
     time.sleep(5)
 
 def send_offline_status():
-  global rdb, lat, lng  
+  global conn, rdb, lat, lng
+  rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()  
   cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
   nodes = list(cursor)
-  print "Offline Mode: ", node_id, ", @ ", str(lat), ", " ,str(lng), " status = offline" 
+  timestamp = time.time()
+  print "Offline Mode: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = offline" 
   if nodes:
     node = nodes[0]      
-    rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "offline"}).run()
+    rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "offline"}).run()
   else:      
-    rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" }).run()      
+    rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp ,"status": "offline" }).run()      
 
-#def send_distress_signal():
-
+def send_distress_signal(alert_type):
+  print "Sending distress signal to ERN server!!!"
+  timestamp = time.time()
+  rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
+  rdb.table("alerts").insert({"node_id" : str(node_id), "lat": str(lat), "lng": str(lng), "timestamp" : timestamp, "alert_type": alert_type}).run()
 
 def button_pressed(channel):     
   global alert
   print "EMERGENCY BUTTON PRESSED!"
   print "CURRENT ALERT STATUS: ", alert
+  t_distress = threading.Thread(target = send_distress_signal, args=["button"])
+  t_distress.start()
+  t.join()
   
   if alert == False:    
     alert = True    
