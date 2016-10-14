@@ -2,9 +2,23 @@
 
 import RPi.GPIO as GPIO
 import time
+import os
 import requests
 import threading
+import rethinkdb as rdb
 from gps import *
+
+#This ERN node id
+node_id = os.environ["NODE_ID"]
+
+#The ERN server ip address or domain name
+ern_server = "192.168.1.214"
+
+#The RethinkDB client port
+ern_port = 28015
+
+#The RethinkDB database
+ern_db = "ERN"
 
 #The normal street light
 street_light = 29
@@ -102,18 +116,27 @@ def signal_alert():
     time.sleep(0.4)
     GPIO.output(emergency_light, False)
     time.sleep(0.4)
- 
 
+def update_status():
+  while True:
+    global rdb, lat, lng
+    rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
+    cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
+    nodes = list(cursor)
+    if nodes:
+      node = nodes[0]
+      print "Updating node: ", node_id, " @ " str(lat), ", " ,str(lng), " status = online" 
+      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "online"})
+    else:
+      print "Registering new node: ", node_id, " @ " str(lat), ", " ,str(lng)
+      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" })      
+  time.sleep(3)
 
 def button_pressed(channel):     
   global alert
   print "EMERGENCY BUTTON PRESSED!"
   print "CURRENT ALERT STATUS: ", alert
-  #Reset the button
-  #GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
-  #r = requests.get("http://192.168.0.3:9000/test")
-  #print(r.text)
-  #Turn on the street light
+  
   if alert == False:    
     alert = True    
     GPIO.output(street_light, True)
@@ -133,7 +156,6 @@ def check_location():
     lng = gpsd.fix.longitude
     print "Latitude: ", lat, ", Longitude: ", lng
     time.sleep(2)
-
 
 try:
   GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=300)
