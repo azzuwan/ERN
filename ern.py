@@ -63,6 +63,9 @@ GPIO.output(emergency_light, False)
 GPIO.setup(pir, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
 GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
 
+#Connect to RethinkDB database
+rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
+
 #Manage light sensor
 def RCTime(pin):
   global GPIO
@@ -118,19 +121,33 @@ def signal_alert():
     time.sleep(0.4)
 
 def update_status():
-  while True:
-    global rdb, lat, lng
-    rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
+  print "STATUS UPDATE:"
+  while not stop_threads:
+    global rdb, lat, lng    
     cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
     nodes = list(cursor)
     if nodes:
       node = nodes[0]
-      print "Updating node: ", node_id, " @ " str(lat), ", " ,str(lng), " status = online" 
-      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "online"})
+      print "Updating node: ", node_id, ", @ ", str(lat), ", " ,str(lng), " status = online" 
+      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "online"}).run()
     else:
-      print "Registering new node: ", node_id, " @ " str(lat), ", " ,str(lng)
-      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" })      
-  time.sleep(3)
+      print "Registering new node: ", node_id, ", @ ", str(lat), ", " ,str(lng)
+      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" }).run()      
+    time.sleep(5)
+
+def send_offline_status():
+  global rdb, lat, lng  
+  cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
+  nodes = list(cursor)
+  print "Offline Mode: ", node_id, ", @ ", str(lat), ", " ,str(lng), " status = offline" 
+  if nodes:
+    node = nodes[0]      
+    rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng),  "status": "offline"}).run()
+  else:      
+    rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "status": "online" }).run()      
+
+#def send_distress_signal():
+
 
 def button_pressed(channel):     
   global alert
@@ -154,17 +171,19 @@ def check_location():
     gpsd.next()
     lat = gpsd.fix.latitude
     lng = gpsd.fix.longitude
-    print "Latitude: ", lat, ", Longitude: ", lng
+    #print "Latitude: ", lat, ", Longitude: ", lng
     time.sleep(2)
 
 try:
   GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=300)
 
   t_location = threading.Thread(target = check_location)
-  t_light    = threading.Thread(target = check_light)  
+  t_light    = threading.Thread(target = check_light)
+  t_status   = threading.Thread(target = update_status)  
 
   t_location.start()
-  t_light.start()  
+  t_light.start()
+  t_status.start()  
   
   while True:
     time.sleep(10)
@@ -176,6 +195,8 @@ except KeyboardInterrupt:
   stop_threads = True
   t_location.join()
   t_light.join()
+  t_status.join()
+  send_offline_status()
   pass
 finally:
   print "Goodbye!" 
