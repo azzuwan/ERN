@@ -159,7 +159,7 @@ def button_pressed(channel):
   print "CURRENT ALERT STATUS: ", alert
   t_distress = threading.Thread(target = send_distress_signal, args=["button"])
   t_distress.start()
-  t.join()
+  t_distress.join()
   
   if alert == False:    
     alert = True    
