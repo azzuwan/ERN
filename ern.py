@@ -203,7 +203,7 @@ except KeyboardInterrupt:
   t_light.join()
   t_status.join()
   send_offline_status()
-  if not t_distress:
+  if t_distress:
     t_distress.join()
   pass
 finally:
