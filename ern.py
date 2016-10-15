@@ -86,27 +86,26 @@ def check_light():
   global GPIO, previous_pir, pir_value, ldr_value 
   while not stop_threads:    
     #Get motion detector value
-    pir_value = GPIO.input(pir)
-    
+    pir_value = GPIO.input(pir)    
     #Get light sensor value
     ldr_value = RCTime(ldr)
-    #print ldr_value
+    print "Light Dependent Resistor Value: ",ldr_value
 
     #If motion is detected and it's low light turn on the street light
     #for 10 seconds
     if pir_value == 1 and previous_pir == 0 and ldr_value > 25000:
-      #print "Motion detected and it's dark"
+      print "Motion detected and it's dark"
       previous_pir = 1
       GPIO.output(street_light, True)
       time.sleep(10)      
     #If motion is detected but it is still bright, make sure the lights 
     #are off
     elif pir_value == 1 and previous_pir == 0 and ldr_value < 25000:
-      #print "Motion detected but the sun is still out there"
+      print "Motion detected but the sun is still out there"
       GPIO.output(street_light, False)
       time.sleep(0.1)    
     else:
-      print "No Motion"
+      #print "No Motion"
       previous_pir = 0
       GPIO.output(street_light, False)
       time.sleep(0.1)
@@ -159,8 +158,6 @@ def button_pressed(channel):
   global alert, t_distress
   print "EMERGENCY BUTTON PRESSED!"
   print "CURRENT ALERT STATUS: ", alert
-  
-  
   if alert == False:    
     alert = True    
     GPIO.output(street_light, True)
@@ -180,12 +177,11 @@ def check_location():
     global lat,lng    
     gpsd.next()
     lat = gpsd.fix.latitude
-    lng = gpsd.fix.longitude
-    #print "Latitude: ", lat, ", Longitude: ", lng
+    lng = gpsd.fix.longitude    
     time.sleep(2)
 
 try:
-  GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=300)
+  GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=500)
 
   t_location = threading.Thread(target = check_location)
   t_light    = threading.Thread(target = check_light)
