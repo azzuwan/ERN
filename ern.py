@@ -7,18 +7,22 @@ import requests
 import threading
 import rethinkdb as rdb
 from gps import *
+import socket
 
 #This ERN node id
 node_id = os.environ["NODE_ID"]
 
 #The ERN server ip address or domain name
-ern_server = "192.168.1.214"
+ern_server = "ern.erki.net"
 
 #The RethinkDB client port
 ern_port = 28015
 
 #The RethinkDB database
 ern_db = "ERN"
+
+#The local IP address for this node
+local_ip = None
 
 #The normal street light
 street_light = 29
@@ -28,6 +32,9 @@ emergency_light = 31
 
 #Light sensor
 ldr = 33
+
+#Sensor limit to trigger street light
+ldr_limit = 8000
 
 #Emergency Button
 button = 37
@@ -93,19 +100,19 @@ def check_light():
 
     #If motion is detected and it's low light turn on the street light
     #for 10 seconds
-    if pir_value == 1 and previous_pir == 0 and ldr_value > 25000:
+    if pir_value == 1 and previous_pir == 0 and ldr_value > ldr_limit:
       print "Motion detected and it's dark"
       previous_pir = 1
       GPIO.output(street_light, True)
       time.sleep(10)      
     #If motion is detected but it is still bright, make sure the lights 
     #are off
-    elif pir_value == 1 and previous_pir == 0 and ldr_value < 25000:
+    elif pir_value == 1 and previous_pir == 0 and ldr_value < ldr_limit:
       print "Motion detected but the sun is still out there"
       GPIO.output(street_light, False)
       time.sleep(0.1)    
     else:
-      #print "No Motion"
+      print "No Motion"
       previous_pir = 0
       GPIO.output(street_light, False)
       time.sleep(0.1)
@@ -118,9 +125,15 @@ def signal_alert():
     GPIO.output(emergency_light, False)
     time.sleep(0.4)
 
-def update_status():
+def get_ip_address():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    return s.getsockname()[0]
+
+
+def update_status():  
   print "STATUS UPDATE:"
-  while not stop_threads:
+  while not stop_threads:    
     global lat, lng
     rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
     cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
@@ -128,11 +141,11 @@ def update_status():
     timestamp = time.time()
     if nodes:
       node = nodes[0]
-      print "Updating node: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = online" 
-      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online"}).run()
+      print "Updating node: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = online  ip = " + local_ip 
+      rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online", "ip_address" : local_ip}).run()
     else:
       print "Registering new node: ", node_id, ", @ ", str(lat), ", " ,str(lng)
-      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online" }).run()      
+      rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "online", "ip_address" : local_ip }).run()      
     time.sleep(5)
 
 def send_offline_status():
@@ -141,18 +154,18 @@ def send_offline_status():
   cursor = rdb.table("nodes").filter(lambda node: node["node_id"].match(node_id)).run()
   nodes = list(cursor)
   timestamp = time.time()
-  print "Offline Mode: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = offline" 
+  print "Offline Mode: ", node_id, ", @ ", str(lat), ", " ,str(lng), " ", timestamp, " status = offline ip = "  +local_ip
   if nodes:
     node = nodes[0]      
-    rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "offline"}).run()
+    rdb.table("nodes").get(node["id"]).update({ "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp , "status": "offline", "ip_address" : local_ip}).run()
   else:      
-    rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp ,"status": "offline" }).run()      
+    rdb.table("nodes").insert({"node_id" : str(node_id), "lat" : str(lat), "lng" : str(lng), "timestamp" : timestamp ,"status": "offline", "ip_address" : local_ip }).run()      
 
 def send_distress_signal(alert_type):
-  print "Sending distress signal to ERN server!!!"
+  print "Sending distress signal to ERN server"
   timestamp = time.time()
   rdb.connect(host=ern_server, port=ern_port, db=ern_db).repl()
-  rdb.table("alerts").insert({"node_id" : str(node_id), "lat": str(lat), "lng": str(lng), "timestamp" : timestamp, "alert_type": alert_type}).run()
+  rdb.table("alerts").insert({"node_id" : str(node_id), "lat": str(lat), "lng": str(lng), "timestamp" : timestamp, "alert_type": alert_type, "ip_address" : local_ip}).run()
 
 def button_pressed(channel):     
   global alert, t_distress
@@ -181,6 +194,8 @@ def check_location():
     time.sleep(2)
 
 try:
+  local_ip = get_ip_address()
+
   GPIO.add_event_detect(button, GPIO.FALLING, callback=button_pressed, bouncetime=500)
 
   t_location = threading.Thread(target = check_location)
